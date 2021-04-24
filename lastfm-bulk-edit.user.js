@@ -1,15 +1,15 @@
 // ==UserScript==
-// @name        Last.fm Bulk Edit
-// @namespace   https://github.com/RudeySH/lastfm-bulk-edit
+// @name        Last.fm Bulk Edit (caldwellmatthew fork)
+// @namespace   https://github.com/caldwellmatthew/lastfm-bulk-edit
 // @version     0.3.4
-// @author      Rudey
+// @author      Rudey, caldwellmatthew
 // @description Bulk edit your scrobbles for any artist or album on Last.fm at once.
 // @license     GPL-3.0-or-later
-// @homepageURL https://github.com/RudeySH/lastfm-bulk-edit
+// @homepageURL https://github.com/caldwellmatthew/lastfm-bulk-edit
 // @icon        https://www.last.fm/static/images/lastfm_avatar_twitter.png
-// @updateURL   https://raw.githubusercontent.com/RudeySH/lastfm-bulk-edit/master/lastfm-bulk-edit.user.js
-// @downloadURL https://raw.githubusercontent.com/RudeySH/lastfm-bulk-edit/master/lastfm-bulk-edit.user.js
-// @supportURL  https://github.com/RudeySH/lastfm-bulk-edit/issues
+// @updateURL   https://raw.githubusercontent.com/caldwellmatthew/lastfm-bulk-edit/master/lastfm-bulk-edit.user.js
+// @downloadURL https://raw.githubusercontent.com/caldwellmatthew/lastfm-bulk-edit/master/lastfm-bulk-edit.user.js
+// @supportURL  https://github.com/caldwellmatthew/lastfm-bulk-edit/issues
 // @match       https://www.last.fm/*
 // @require     https://cdnjs.cloudflare.com/ajax/libs/he/1.2.0/he.min.js
 // ==/UserScript==
@@ -743,6 +743,28 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
 
     const distinctScrobbleData = [...distinctGroups].map(([name, values]) => values[0]);
 
+    const trackNames = distinctScrobbleData.map(originalData => originalData.get('track_name'));
+    const commonSuffix = longestCommonSuffix(trackNames);
+
+    if (commonSuffix) {
+        const template = document.createElement('template');
+        template.innerHTML = `
+        <div class="form-group js-form-group">
+            <label for="remove_common" class="control-label">Common suffix</label>
+            <div class="js-form-group-controls form-group-controls">
+                <div class="checkbox">
+                    <label for="remove_common">
+                        <input id="remove_common" type="checkbox">
+                        Remove <strong>${commonSuffix}</strong> from track titles
+                    </label>
+                </div>
+            </div>
+        </div>`;
+
+        const artistNameFormGroup = artist_name_input.parentNode.parentNode;
+        form.insertBefore(template.content, artistNameFormGroup);
+    }
+
     const submitButton = form.querySelector('button[type="submit"]');
     submitButton.addEventListener('click', async event => {
         event.preventDefault();
@@ -765,6 +787,8 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
         const album_name = getMixedInputValue(album_name_input);
         const album_artist_name = getMixedInputValue(album_artist_name_input);
 
+        const removeCommonSuffix = form.elements['remove_common']?.checked;
+
         for (const originalData of distinctScrobbleData) {
             const track_name_original = originalData.get('track_name');
             const artist_name_original = originalData.get('artist_name');
@@ -777,10 +801,11 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
                 : album_artist_name;
 
             // check if anything changed compared to the original track, artist, album and album artist combination
-            if (track_name             !== null && track_name             !== track_name_original  ||
-                artist_name            !== null && artist_name            !== artist_name_original ||
-                album_name             !== null && album_name             !== album_name_original  ||
-                album_artist_name_sync !== null && album_artist_name_sync !== album_artist_name_original) {
+            if (track_name             !== null && track_name             !== track_name_original        ||
+                artist_name            !== null && artist_name            !== artist_name_original       ||
+                album_name             !== null && album_name             !== album_name_original        ||
+                album_artist_name_sync !== null && album_artist_name_sync !== album_artist_name_original ||
+                removeCommonSuffix) {
 
                 const clonedFormData = cloneFormData(formData);
 
@@ -792,6 +817,10 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
                 clonedFormData.set('track_name_original', track_name_original);
                 if (track_name === null) {
                     clonedFormData.set('track_name', track_name_original);
+                }
+                if (removeCommonSuffix) {
+                    const strippedTrackName = track_name_original.replace(commonSuffix, '');
+                    clonedFormData.set('track_name', strippedTrackName);
                 }
 
                 clonedFormData.set('artist_name_original', artist_name_original);
@@ -962,4 +991,17 @@ function cloneFormData(formData) {
     }
 
     return clonedFormData;
+}
+
+function longestCommonPrefix(strings) {
+    const sorted = strings.sort();
+    const first = sorted[0], last = sorted[sorted.length - 1];
+    let i;
+    for (i = 0; i < first.length && first[i] === last[i]; i++);
+    return first.substring(0, i);
+}
+
+function longestCommonSuffix(strings) {
+    const reversed = strings.map(str => str.split('').reverse().join(''));
+    return longestCommonPrefix(reversed).split('').reverse().join('');
 }
