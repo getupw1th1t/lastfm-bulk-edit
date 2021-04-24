@@ -135,17 +135,18 @@ function appendEditScrobbleHeaderLinkAndMenuItems(element) {
     }
 
     appendEditScrobbleHeaderLink(element);
+    appendEditScrobbleHeaderLink(element, true);
     appendEditScrobbleMenuItems(element);
 }
 
-function appendEditScrobbleHeaderLink(element) {
+function appendEditScrobbleHeaderLink(element, thisPageOnly = false) {
     const header = element.querySelector('.library-header');
 
     if (header === null) {
         return; // current page does not contain the header we're looking for
     }
 
-    const form = getEditScrobbleForm(document.URL);
+    const form = getEditScrobbleForm(document.URL, null, thisPageOnly);
     const button = form.querySelector('button');
 
     // replace submit button with a link
@@ -156,7 +157,7 @@ function appendEditScrobbleHeaderLink(element) {
     const link = form.appendChild(document.createElement('a'));
     link.href = 'javascript:void(0)';
     link.role = 'button';
-    link.textContent = 'Edit scrobbles';
+    link.textContent = thisPageOnly ? 'Edit only these scrobbles' : 'Edit scrobbles';
     link.addEventListener('click', () => button.click());
 
     header.insertAdjacentText('beforeend', ' · ');
@@ -186,7 +187,7 @@ function appendEditScrobbleMenuItems(element) {
     }
 }
 
-function getEditScrobbleForm(url, row) {
+function getEditScrobbleForm(url, row, thisPageOnly = false) {
     const urlType = getUrlType(url);
 
     const form = editScrobbleFormTemplate.content.cloneNode(true).querySelector('form');
@@ -219,7 +220,7 @@ function getEditScrobbleForm(url, row) {
 
         if (!allScrobbleData) {
             const loadingModal = createLoadingModal('Loading Scrobbles...', { display: 'percentage' });
-            allScrobbleData = await fetchScrobbleData(url, loadingModal);
+            allScrobbleData = await fetchScrobbleData(url, loadingModal, null, thisPageOnly);
             loadingModal.hide();
         }
 
@@ -506,12 +507,12 @@ function getCompletionRatio(steps) {
 }
 
 // this is a recursive function that browses pages of artists, albums and tracks to gather scrobbles
-async function fetchScrobbleData(url, loadingModal, parentStep) {
+async function fetchScrobbleData(url, loadingModal, parentStep, thisPageOnly = false) {
     if (!parentStep) parentStep = loadingModal;
 
-    // remove "?date_preset=LAST_365_DAYS", etc.
+    // remove "?date_preset=LAST_365_DAYS", etc., unless only scrobbling current page
     const indexOfQuery = url.indexOf('?');
-    if (indexOfQuery !== -1) {
+    if (indexOfQuery !== -1 && !thisPageOnly) {
         url = url.substr(0, indexOfQuery);
     }
 
