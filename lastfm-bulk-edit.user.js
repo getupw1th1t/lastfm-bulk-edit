@@ -746,7 +746,7 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
     const trackNames = distinctScrobbleData.map(originalData => originalData.get('track_name'));
     const commonSuffix = longestCommonSuffix(trackNames);
 
-    if (commonSuffix) {
+    if (trackNames.length > 1 && commonSuffix) {
         const template = document.createElement('template');
         template.innerHTML = `
         <div class="form-group js-form-group">
