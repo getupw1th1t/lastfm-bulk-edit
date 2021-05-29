@@ -30,6 +30,8 @@ const libraryURL = `${authLink.href}/library`;
 // https://regex101.com/r/KwEMRx/1
 const albumRegExp = new RegExp(`^${libraryURL}/music(/\\+[^/]*)*(/[^+][^/]*){2}$`);
 const artistRegExp = new RegExp(`^${libraryURL}/music(/\\+[^/]*)*(/[^+][^/]*){1}$`);
+const parentheticalRegExp = /( \([^()]+\))$/;
+const dashRegExp = /( - [^-]+)$/;
 
 const domParser = new DOMParser();
 
@@ -766,6 +768,29 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
         form.insertBefore(template.content, artistNameFormGroup);
     }
 
+    // add buttons to auto-strip fields
+    const autoStripTemplate = document.createElement('template');
+    autoStripTemplate.innerHTML = `
+        <span style="text-decoration: underline; cursor: pointer;">
+            Auto-strip
+        </span>`;
+
+    function strip(input) {
+        if (input.value.match(parentheticalRegExp)) {
+            input.value = input.value.replace(parentheticalRegExp, '');
+        } else if (input.value.match(dashRegExp)) {
+            input.value = input.value.replace(dashRegExp, '');
+        }
+    }
+
+    const singleInputs = [artist_name_input, album_name_input, album_artist_name_input];
+
+    for (const input of singleInputs) {
+        const stripTrack = autoStripTemplate.content.cloneNode(true).firstElementChild;
+        stripTrack.addEventListener('click', () => strip(input));
+        input.parentNode.appendChild(stripTrack);
+    }
+    
     const submitButton = form.querySelector('button[type="submit"]');
     submitButton.addEventListener('click', async event => {
         event.preventDefault();
