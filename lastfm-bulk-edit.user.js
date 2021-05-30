@@ -126,6 +126,10 @@ function appendStyle() {
 
         .${namespace}-text-info {
             color: #2b65d9;
+        }
+
+        .${namespace}-track-title-edit {
+            margin-top: 5px!important;
         }`;
 
     document.head.appendChild(style);
@@ -752,17 +756,17 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
     if (trackNames.length > 1 && commonSuffix) {
         const template = document.createElement('template');
         template.innerHTML = `
-        <div class="form-group js-form-group">
-            <label for="remove_common" class="control-label">Common suffix</label>
-            <div class="js-form-group-controls form-group-controls">
-                <div class="checkbox">
-                    <label for="remove_common">
-                        <input id="remove_common" type="checkbox">
-                        Remove <strong>${commonSuffix}</strong> from track titles
-                    </label>
+            <div class="form-group js-form-group">
+                <label for="remove_common" class="control-label">Common suffix</label>
+                <div class="js-form-group-controls form-group-controls">
+                    <div class="checkbox">
+                        <label for="remove_common">
+                            <input id="remove_common" type="checkbox">
+                            Remove <strong>${commonSuffix}</strong> from track titles
+                        </label>
+                    </div>
                 </div>
-            </div>
-        </div>`;
+            </div>`;
 
         const artistNameFormGroup = artist_name_input.parentNode.parentNode;
         form.insertBefore(template.content, artistNameFormGroup);
@@ -783,7 +787,45 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
         }
     }
 
+    const trackEditForms = distinctScrobbleData.reduce((acc, data, i) => {
+        const title = data.get('track_name');
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = title;
+        input.classList.add(`${namespace}-track-title-edit`);
+        acc[title] = input;
+        return acc;
+    }, {});
+    
+    const trackListEdit = document.createElement('div');
+    trackListEdit.classList.add('hidden');
+    for (const title in trackEditForms) {
+        trackListEdit.appendChild(trackEditForms[title]);
+    }
+    const stripTrack = autoStripTemplate.content.cloneNode(true).firstElementChild;
+    stripTrack.addEventListener('click', () => {
+        for (const title in trackEditForms) {
+            const input = trackEditForms[title];
+            strip(input);
+        }
+    });
+    trackListEdit.appendChild(stripTrack);
+    
+    const expandButton = document.createElement('span');
+    expandButton.innerHTML = '&#9660';
+    expandButton.style = 'cursor: pointer;';
+    expandButton.addEventListener('click', () => {
+        trackListEdit.classList.toggle('hidden');
+    });
+
     const singleInputs = [artist_name_input, album_name_input, album_artist_name_input];
+
+    if (distinctScrobbleData.length > 1) {
+        track_name_input.parentNode.insertBefore(expandButton, track_name_input.nextElementChild);
+        track_name_input.parentNode.insertBefore(trackListEdit, track_name_input.nextElementChild);
+    } else {
+        singleInputs.push(track_name_input);
+    }    
 
     for (const input of singleInputs) {
         const stripTrack = autoStripTemplate.content.cloneNode(true).firstElementChild;
@@ -826,12 +868,15 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
                 ? artist_name
                 : album_artist_name;
 
+            const updatedTrackName = trackEditForms[track_name_original]?.value;
+            const updateTrackName = updatedTrackName !== track_name_original;
+
             // check if anything changed compared to the original track, artist, album and album artist combination
             if (track_name             !== null && track_name             !== track_name_original        ||
                 artist_name            !== null && artist_name            !== artist_name_original       ||
                 album_name             !== null && album_name             !== album_name_original        ||
                 album_artist_name_sync !== null && album_artist_name_sync !== album_artist_name_original ||
-                removeCommonSuffix) {
+                removeCommonSuffix || updateTrackName) {
 
                 const clonedFormData = cloneFormData(formData);
 
@@ -847,6 +892,9 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
                 if (removeCommonSuffix) {
                     const strippedTrackName = track_name_original.replace(commonSuffix, '');
                     clonedFormData.set('track_name', strippedTrackName);
+                }
+                if (updateTrackName) {
+                    clonedFormData.set('track_name', updatedTrackName);
                 }
 
                 clonedFormData.set('artist_name_original', artist_name_original);
