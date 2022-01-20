@@ -1,15 +1,15 @@
 // ==UserScript==
-// @name        Last.fm Bulk Edit (caldwellmatthew fork)
-// @namespace   https://github.com/caldwellmatthew/lastfm-bulk-edit
-// @version     0.3.4
+// @name        Last.fm Bulk Edit
+// @namespace   https://github.com/getupw1th1t/lastfm-bulk-edit
+// @version     0.3.6
 // @author      Rudey, caldwellmatthew
 // @description Bulk edit your scrobbles for any artist or album on Last.fm at once.
 // @license     GPL-3.0-or-later
-// @homepageURL https://github.com/caldwellmatthew/lastfm-bulk-edit
+// @homepageURL https://github.com/RudeySH/lastfm-bulk-edit
 // @icon        https://www.last.fm/static/images/lastfm_avatar_twitter.png
-// @updateURL   https://raw.githubusercontent.com/caldwellmatthew/lastfm-bulk-edit/master/lastfm-bulk-edit.user.js
-// @downloadURL https://raw.githubusercontent.com/caldwellmatthew/lastfm-bulk-edit/master/lastfm-bulk-edit.user.js
-// @supportURL  https://github.com/caldwellmatthew/lastfm-bulk-edit/issues
+// @updateURL   https://raw.githubusercontent.com/RudeySH/lastfm-bulk-edit/master/lastfm-bulk-edit.user.js
+// @downloadURL https://raw.githubusercontent.com/RudeySH/lastfm-bulk-edit/master/lastfm-bulk-edit.user.js
+// @supportURL  https://github.com/RudeySH/lastfm-bulk-edit/issues
 // @match       https://www.last.fm/*
 // @require     https://cdnjs.cloudflare.com/ajax/libs/he/1.2.0/he.min.js
 // ==/UserScript==
@@ -166,7 +166,10 @@ function appendEditScrobbleHeaderLink(element, thisPageOnly = false) {
     link.textContent = thisPageOnly ? 'Edit only these scrobbles' : 'Edit scrobbles';
     link.addEventListener('click', () => button.click());
 
-    header.insertAdjacentText('beforeend', ' · ');
+    if (header.lastElementChild.tagName === 'A') {
+        header.insertAdjacentText('beforeend', ' · ');
+    }
+
     header.insertAdjacentElement('beforeend', form);
 }
 
@@ -358,7 +361,7 @@ function getEditScrobbleForm(url, row, thisPageOnly = false) {
     return form;
 }
 
-// shows a form dialog and resolves it's promise on submit
+// shows a form dialog and resolves its promise on submit
 function prompt(title, body) {
     return new Promise((resolve, reject) => {
         const form = document.createElement('form');
@@ -522,7 +525,7 @@ async function fetchScrobbleData(url, loadingModal, parentStep, thisPageOnly = f
         url = url.substr(0, indexOfQuery);
     }
 
-    if (getUrlType(url) === 'artist') {
+    if (getUrlType(url) === 'artist' && !url.endsWith('/+tracks')) {
         url += '/+tracks'; // skip artist overview and go straight to the tracks
     }
 
@@ -578,7 +581,11 @@ function getUrlType(url) {
     if (albumRegExp.test(url)) {
         return 'album';
     } else if (artistRegExp.test(url)) {
-        return 'artist';
+        if (url.endsWith('/+albums')) {
+            return 'album artist';
+        } else {
+            return 'artist';
+        }
     } else {
         return 'track';
     }
@@ -673,7 +680,8 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
     const title = popup.querySelector('.modal-title');
     const form = popup.querySelector('form[action$="/library/edit?edited-variation=library-track-scrobble"]');
 
-    title.textContent = `Edit ${urlType[0].toUpperCase() + urlType.slice(1)} Scrobbles`;
+    title.textContent = `Edit ${urlType} Scrobbles`;
+    title.style.textTransform = 'capitalize';
 
     // remove traces of the first scrobble that was used to initialize the form
     form.removeChild(form.querySelector('.form-group--timestamp'));
@@ -687,39 +695,59 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
     const album_name_input = form.elements['album_name'];
     const album_artist_name_input = form.elements['album_artist_name'];
 
-    augmentInput(urlType, scrobbleData, popup, track_name_input, 'tracks');
-    augmentInput(urlType, scrobbleData, popup, artist_name_input, 'artists');
-    augmentInput(urlType, scrobbleData, popup, album_name_input, 'albums');
-    augmentInput(urlType, scrobbleData, popup, album_artist_name_input, 'album artists');
+    const tracks = augmentInput(scrobbleData, popup, track_name_input, 'tracks');
+    augmentInput(scrobbleData, popup, artist_name_input, 'artists');
+    augmentInput(scrobbleData, popup, album_name_input, 'albums');
+    augmentInput(scrobbleData, popup, album_artist_name_input, 'album artists');
+
+    if (album_artist_name_input.placeholder === 'Mixed' && scrobbleData.some(s => s.get('album_artist_name') === artist_name_input.value)) {
+        const messageTemplate = document.createElement('template');
+        messageTemplate.innerHTML = `
+            <div class="form-group-success">
+                <div class="alert alert-info">
+                    <p>Matching album artists will be kept in sync.</p>
+                </div>
+            </div>`;
+
+        const message = messageTemplate.content.cloneNode(true).firstElementChild;
+        album_artist_name_input.parentNode.insertBefore(message, album_artist_name_input.nextElementChild);
+        album_artist_name_input.addEventListener('input', removeMessage);
+        album_artist_name_input.addEventListener('keydown', removeMessage);
+
+        function removeMessage() {
+            message.parentNode.removeChild(message);
+            album_artist_name_input.removeEventListener('input', removeMessage);
+            album_artist_name_input.removeEventListener('keydown', removeMessage);
+        }
+    }
 
     // keep album artist name in sync
     let previousValue = artist_name_input.value;
     artist_name_input.addEventListener('input', () => {
-        if (album_artist_name_input.value === previousValue) {
+        if (album_artist_name_input.value === previousValue && album_artist_name_input.placeholder !== 'Mixed') {
             album_artist_name_input.value = artist_name_input.value;
             album_artist_name_input.dispatchEvent(new Event('input'));
         }
         previousValue = artist_name_input.value;
     });
 
-    if (album_artist_name_input.placeholder === 'Mixed') {
-        const template = document.createElement('template');
-        template.innerHTML = `
-            <div class="form-group-success">
-                <div class="alert alert-info">
-                    <p>Matching album artists will be kept in sync.</p>
-                </div>
-            </div>`;
-        artist_name_input.parentNode.insertBefore(template.content, artist_name_input.nextElementChild);
+    // update the "Automatic edit" checkbox label
+    let automaticEditFormGroup = form.querySelector('.form-group--create_automatic_edit_rule');
+    if (automaticEditFormGroup && urlType !== 'track') {
+        const label = automaticEditFormGroup.querySelector('.checkbox label').lastChild;
+        label.textContent = label.textContent.replace('of this track', `for ${tracks} track${tracks !== 1 ? 's' : ''} of this ${urlType}`);
     }
 
-    // replace the "Edit all" checkbox with one that cannot be disabled
-    let editAllFormGroup = form.querySelector('.form-group--edit_all');
-    if (editAllFormGroup) form.removeChild(editAllFormGroup);
+    // replace the "Bulk edit" checkbox with one that cannot be disabled
+    let bulkEditFormGroup = form.querySelector('.form-group--edit_all');
+    if (bulkEditFormGroup) form.removeChild(bulkEditFormGroup);
 
-    const summary = `${urlType !== 'artist' ? 'artist, ' : ''}${urlType !== 'track' ? 'track, ' : ''}${urlType !== 'album' ? 'album, ' : ''}and album artist`;
-    const editAllFormGroupTemplate = document.createElement('template');
-    editAllFormGroupTemplate.innerHTML = `
+    const types = ['artist', 'track', 'album', 'album artist'];
+    types.splice(types.indexOf(urlType), 1);
+    const summary = `${types[0]}, ${types[1]} and ${types[2]}`;
+
+    const bulkEditFormGroupTemplate = document.createElement('template');
+    bulkEditFormGroupTemplate.innerHTML = `
         <div class="form-group form-group--edit_all js-form-group">
             <label for="id_edit_all" class="control-label">Bulk edit</label>
             <div class="js-form-group-controls form-group-controls">
@@ -737,8 +765,8 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
             </div>
         </div>`;
 
-    editAllFormGroup = editAllFormGroupTemplate.content.cloneNode(true);
-    form.insertBefore(editAllFormGroup, form.lastElementChild);
+    bulkEditFormGroup = bulkEditFormGroupTemplate.content.cloneNode(true);
+    form.insertBefore(bulkEditFormGroup, automaticEditFormGroup || form.lastElementChild);
 
     // each exact track, artist, album and album artist combination is considered a distinct scrobble
     const distinctGroups = groupBy(scrobbleData, s => JSON.stringify({
@@ -748,7 +776,7 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
         album_artist_name: s.get('album_artist_name') || ''
     }));
 
-    const distinctScrobbleData = [...distinctGroups].map(([name, values]) => values[0]);
+    const distinctScrobbleData = [...distinctGroups].map(([_name, values]) => values[0]);
 
     const trackNames = distinctScrobbleData.map(originalData => originalData.get('track_name'));
     const commonSuffix = longestCommonSuffix(trackNames);
@@ -796,7 +824,7 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
         acc[title] = input;
         return acc;
     }, {});
-    
+
     const trackListEdit = document.createElement('div');
     trackListEdit.classList.add('hidden');
     for (const title in trackEditForms) {
@@ -810,7 +838,7 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
         }
     });
     trackListEdit.appendChild(stripTrack);
-    
+
     const expandButton = document.createElement('span');
     expandButton.innerHTML = '&#9660';
     expandButton.style = 'cursor: pointer;';
@@ -825,14 +853,14 @@ async function augmentEditScrobbleForm(urlType, scrobbleData) {
         track_name_input.parentNode.insertBefore(trackListEdit, track_name_input.nextElementChild);
     } else {
         singleInputs.push(track_name_input);
-    }    
+    }
 
     for (const input of singleInputs) {
         const stripTrack = autoStripTemplate.content.cloneNode(true).firstElementChild;
         stripTrack.addEventListener('click', () => strip(input));
         input.parentNode.appendChild(stripTrack);
     }
-    
+
     const submitButton = form.querySelector('button[type="submit"]');
     submitButton.addEventListener('click', async event => {
         event.preventDefault();
@@ -1035,6 +1063,8 @@ function augmentInput(urlType, scrobbleData, popup, input, plural) {
             }
         }
     }
+
+    return groups.length;
 }
 
 function groupBy(array, keyFunc) {
